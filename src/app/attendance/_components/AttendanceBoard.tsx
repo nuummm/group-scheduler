@@ -639,7 +639,7 @@ export function AttendanceBoard({ initialView }: { initialView: AttendanceView }
             <input
               className={inputClass}
               maxLength={20}
-              placeholder="例: 窓側 / M2 島"
+              placeholder="例: 窓側 / 島 A"
               value={islandRenameValue}
               onChange={(event) => setIslandRenameValue(event.target.value)}
             />
