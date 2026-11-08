@@ -1,0 +1,6 @@
+# Worker を通らずに配る静的ファイル（/assets/ など）にも、Worker と同じ守りのヘッダーを付ける。
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  Referrer-Policy: same-origin

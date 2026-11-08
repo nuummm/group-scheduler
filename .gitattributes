@@ -1,0 +1,4 @@
+# 改行コードを固定する（Windows で clone しても LF のまま扱う）。
+* text=auto eol=lf
+*.png binary
+*.gif binary

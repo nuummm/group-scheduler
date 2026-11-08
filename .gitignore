@@ -1,0 +1,19 @@
+.DS_Store
+node_modules/
+*.tsbuildinfo
+
+# ビルドと wrangler の作業場所。
+dist/
+.wrangler/
+
+# `pnpm cf-typegen` が wrangler.jsonc から作る型。
+worker-configuration.d.ts
+
+# secret を書いたファイル。手本の .dev.vars.example だけは入れる。
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env*
+
+# bench の生の出力（表は docs/ に貼る）。
+bench/results/

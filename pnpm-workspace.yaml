@@ -1,0 +1,4 @@
+# workerd（Workers のローカル実行環境）と esbuild は、入れるときに自分の実行ファイルを確かめる。
+allowBuilds:
+  esbuild: true
+  workerd: true

@@ -1,0 +1,254 @@
+@import "tailwindcss";
+
+/* ============================================================
+ * デザイントークン
+ * ------------------------------------------------------------
+ * 色は「意味」で名前を付ける（surface / border / accent / 状態色）。
+ * 用途と色を混ぜた名前（--busy-soft など）にすると、予定表以外で使い回すたびに意味が破綻する。
+ *
+ * 基調は低彩度のニュートラル。この画面の主役は「61 日 × 24 コマの表」で、
+ * 背景に色があるほどセルの状態色が読みにくくなる。彩度はアクセントと状態色に集中させる。
+ * ============================================================ */
+
+@theme {
+  --font-sans:
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, -apple-system,
+    sans-serif;
+
+  /* 面 */
+  --color-canvas: oklch(0.98 0.003 106);
+  --color-surface: oklch(1 0 0);
+  --color-surface-muted: oklch(0.972 0.004 106);
+  --color-surface-raised: oklch(1 0 0);
+
+  /* 文字 */
+  --color-ink: oklch(0.24 0.012 260);
+  --color-ink-muted: oklch(0.52 0.014 260);
+  --color-ink-subtle: oklch(0.66 0.012 260);
+
+  /* 罫線 */
+  --color-line: oklch(0.91 0.005 260);
+  --color-line-strong: oklch(0.85 0.008 260);
+
+  /* アクセント（既存アプリの teal 系を引き継ぐ） */
+  --color-accent: oklch(0.55 0.11 187);
+  --color-accent-hover: oklch(0.49 0.11 187);
+  --color-accent-soft: oklch(0.96 0.03 187);
+  --color-accent-ink: oklch(0.38 0.09 187);
+
+  /* 状態色: 予定表 */
+  --color-busy: oklch(0.58 0.19 22);
+  --color-busy-soft: oklch(0.95 0.04 22);
+  --color-free: oklch(0.62 0.15 152);
+  --color-free-soft: oklch(0.95 0.05 152);
+
+  /* 状態色: 在室 */
+  --color-present: oklch(0.62 0.15 152);
+  --color-present-soft: oklch(0.94 0.06 152);
+  --color-away: oklch(0.72 0.15 78);
+  --color-away-soft: oklch(0.95 0.06 78);
+
+  --color-danger: oklch(0.58 0.2 25);
+
+  --radius-card: 14px;
+  --radius-control: 9px;
+
+  --shadow-card: 0 1px 2px oklch(0.2 0.02 260 / 0.05), 0 6px 20px oklch(0.2 0.02 260 / 0.05);
+  --shadow-float: 0 8px 32px oklch(0.2 0.02 260 / 0.16);
+
+  /* 動き。バネは軽いオーバーシュートまで（在室の反応が「揺れ」に見えない範囲） */
+  --ease-swift: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spring: cubic-bezier(0.32, 1.2, 0.5, 1);
+}
+
+html {
+  /* この画面は明るい面を前提に組んである。予定表のヒートマップと在室の状態色は
+   * 反転すると読み取りやすさが変わるので、OS のダーク設定には追随させない。 */
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+
+  /* 日本語は単語の区切りが空白で示されないので、既定では文節の途中でも折り返される
+   * （「押し直して不在に戻せば」のような切れ方になる）。auto-phrase は文節の
+   * 切れ目で折り返す指定。対応していないブラウザでは従来どおりの折り返しに戻るだけ。 */
+  word-break: auto-phrase;
+  /* 行頭に「、」「。」「）」が来ないようにする。 */
+  line-break: strict;
+  /* 最終行だけが極端に短くなる（ぶら下がり）のを避ける。 */
+  text-wrap: pretty;
+}
+
+/*
+ * 説明文の折り返し。
+ *
+ * `balance` は行の長さを揃えようとして幅が余っていても早めに折るので、本文が中途半端な
+ * 位置で改行される。`pretty`（最終行が極端に短くなるのを防ぐだけ）に留め、幅は使い切る。
+ */
+.copy-block {
+  text-wrap: pretty;
+}
+
+/* フォーカスリングは全体で 1 種類に統一する（キーボード操作の見え方を揃える）。 */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================================================
+ * 予定表マトリクス
+ * ------------------------------------------------------------
+ * 横だけスクロールする。行見出し（＝コマ）は sticky にして、期間指定モードで
+ * 61 列を右へ送っても何のコマを見ているか分かるようにする。
+ * 列見出しは貼り付けない（縦はページごとスクロールするため）。
+ * ============================================================ */
+
+/*
+ * 全体表の外枠。
+ *
+ * 横だけスクロールさせる。縦にも高さの上限を付けると、表の上でホイールを回したときに
+ * ページではなく表が動き、画面全体をスクロールできなくなる。毎週固定のモードでは
+ * 6〜10 行しかなく、期間指定でも縦は素直に伸ばしたほうが読みやすい。
+ */
+.matrix-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.matrix-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.matrix-table th,
+.matrix-table td {
+  border-right: 1px solid var(--color-line);
+  border-bottom: 1px solid var(--color-line);
+}
+
+/* セルの中身（button）を行の高さいっぱいに広げる。
+ * 行見出しが 2 行に折り返すと行だけが背高になり、button が伸びずに隙間が出る。
+ * td に高さの起点を与えると子の height:100% が行の実高に解決される。 */
+.matrix-table td {
+  height: 1px;
+  padding: 0;
+}
+
+.matrix-table td > button {
+  height: 100%;
+}
+
+/*
+ * 列見出しは貼り付けない。表の縦スクロールをやめた（ページ側でスクロールする）ので、
+ * ここで sticky にすると横スクロール用の枠を基準に貼り付いてしまい、1 行目に重なる。
+ * 行見出しの sticky は横スクロールに対して効くので残す。
+ */
+.matrix-table thead th {
+  background-color: var(--color-surface-muted);
+}
+
+.matrix-table tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background-color: var(--color-surface-muted);
+}
+
+/* 角のマス。position を付けないと left も z-index も効かず、横スクロールしたときに
+ * 行見出しの列だけが残って、その上の見出しが流れていってしまう。 */
+.matrix-table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+
+/* 称号のテロップ。下から差し替わる動きで「切り替わった」ことだけを伝える。 */
+@keyframes ticker-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ticker-item {
+  animation: ticker-rise 420ms var(--ease-swift) both;
+}
+
+/* 予定入力はドラッグで塗る。塗っている最中に文字が選択されると見た目が乱れるので抑える。
+ *
+ * `touch-action: none` はここには置かない。スクロール領域そのものに掛けると、
+ * 指で表を動かせなくなる（期間指定モードは 61 列あり、スクロールできないと入力できない）。
+ * タッチではドラッグ塗りを使わず 1 マスずつのタップにする（ScheduleEditor 側で分岐）。 */
+.paint-grid {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================================
+ * 到着のお祝い（在室状況）
+ * ------------------------------------------------------------
+ * 押した本人の画面に数秒だけ出る。盤面には残さない。
+ * ============================================================ */
+
+/* 紙吹雪。上から落ちながら回る。枚数と速さは連続日数で変える（JS 側）。 */
+@keyframes confetti-fall {
+  from {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(115vh) rotate(540deg);
+    opacity: 0.15;
+  }
+}
+
+.confetti-piece {
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+/* 中央の札。少しだけ跳ねて出す（バネは軽いオーバーシュートまで）。 */
+@keyframes celebration-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.celebration-pop {
+  animation: celebration-pop-in 320ms var(--ease-spring) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: 動きを止める指定は個別の transition より必ず強い必要がある */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: 同上 */
+    transition-duration: 0.01ms !important;
+    /* 遅延まで潰さないと、始まる前の姿（紙吹雪なら画面上端）で貼り付いてから
+     * 一斉に消える。動きを止めたい設定で、かえって目立つ点滅になる。 */
+    /* biome-ignore lint/complexity/noImportantStyles: 同上 */
+    animation-delay: 0ms !important;
+  }
+
+  /* 紙吹雪は動きそのものが中身なので、止めるなら出さない。 */
+  .confetti-piece {
+    display: none;
+  }
+}

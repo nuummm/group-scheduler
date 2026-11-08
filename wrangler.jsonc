@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // 名前を変えると別の Worker として作られ、DB（Durable Object）も空から始まる。
+  "name": "group-scheduler",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // account_id はここに書かない（リポジトリを特定のアカウントに縛らない）。
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // 画面の HTML も合言葉の内側に置くため Worker を通す。ビルドした JS / CSS（/assets/）だけは
+    // Worker を通さず配る（中身は画面の組み立て方だけで、データは API 越しにしか出ない）。
+    "run_worker_first": ["/*", "!/assets/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "STORE", "class_name": "AppStore" }]
+  },
+  // 無料プランで使えるのは SQLite 型の Durable Object だけ。
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AppStore"] }],
+  "vars": {
+    // 組織に合わせて変える値。README の「設定」に一覧がある。
+    "APP_NAME": "Group Scheduler",
+    "PLACE_NAME": "部屋",
+    "TERM_GROUP": "グループ",
+    "TERM_ROLE": "区分",
+    "OWNER_ROLE": "リーダー",
+    "DEFAULT_ROLES": "メンバー",
+    // 毎週固定モードの基本のコマ（`見出し=開始-終了` をカンマ区切り。見出しを省くと「N限」）と曜日。
+    // イベントを作った時点の値がそのイベントに写るので、あとで変えても既存のイベントは崩れない。
+    "WEEKLY_SLOTS": "9:00-10:30,10:40-12:10,13:00-14:30,14:40-16:10,16:20-17:50,18:00-19:30",
+    "WEEKDAYS": "mon,tue,wed,thu,fri",
+    "SCHEDULER_BASIC_USER": "demo",
+    "SCHEDULER_TIME_ZONE": "Asia/Tokyo",
+    "SLACK_NOTIFY_DELAY_MS": "5000",
+    "SLACK_BOT_NAME": "",
+    "SLACK_BOT_EMOJI": ":office:"
+  },
+  // secret（合言葉・Slack の送り先）はここに書かない。型は .dev.vars.example から作る（pnpm cf-typegen）。
+  // `secrets.required` を使わないのは、使うと手元で .dev.vars の任意の項目が読まれなくなるため。
+  // 版ごとの確認用 URL は使わない（合言葉は掛かるが、同じ DB へ入る入口が増えるだけ）。
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "upload_source_maps": true
+}

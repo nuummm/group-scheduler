@@ -1,0 +1,13 @@
+# 手元の開発用の secret。`cp .dev.vars.example .dev.vars` して使う（pnpm dev が読む）。
+# .dev.vars は git に入らない。本番の値はここに書かず、`wrangler secret put` で入れる。
+# wrangler.jsonc の vars（APP_NAME など）も、ここに書けば手元だけ上書きできる。
+#
+# secret の型（worker-configuration.d.ts）は、このファイルに並んだ名前から作る（pnpm cf-typegen）。
+# secret を足すときは、ここにも名前を足す。
+
+# 入口の合言葉。ユーザー名は wrangler.jsonc の SCHEDULER_BASIC_USER（既定は demo）。
+# **空だとすべての要求が 503 になる**（設定し忘れがそのまま全公開にならないよう、閉じる側に倒してある）。
+SCHEDULER_BASIC_PASSWORD=dev-password
+
+# 任意。在室のお知らせの送り先（Slack Incoming Webhook）。空ならログに出るだけで送らない。
+SLACK_ATTENDANCE_WEBHOOK_URL=
