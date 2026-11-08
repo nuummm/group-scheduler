@@ -330,6 +330,9 @@ describe("認証失敗のロックアウト", () => {
 
     const right = await call("/api/attendance", from(ip));
     expect(right.status).toBe(429);
+    // 誤答も同じ 429。応答の違いで正答が分かってはいけない。
+    const wrongWhileLocked = await call("/api/attendance", from(ip, basicAuth(BASIC_USER, "nope")));
+    expect(wrongWhileLocked.status).toBe(429);
     // 画面（静的ファイル）も同じ扱い。
     expect((await call("/attendance", from(ip))).status).toBe(429);
     // 別の送り元は巻き込まない。

@@ -35,13 +35,20 @@ export function lockedUntil(key: string, now = Date.now()): number | null {
 }
 
 /**
- * 失敗を 1 回記録し、この失敗でロックに入ったならその解除時刻を返す。
+ * 失敗を 1 回記録し、ロック中（この失敗で入った場合を含む）ならその解除時刻を返す。
  *
  * 呼ぶ側のトランザクションの外で呼ぶこと。失敗を知らせる例外で巻き戻ると、
  * 記録ごと消えて何回でも試せてしまう。
  */
 export function recordFailure(key: string, now = Date.now()): number | null {
   return inTransaction((db) => {
+    // ロック中の誤答も 429 にする。401 を返すと、正答だけが 429 になり応答で当たりが分かる。
+    const active = db
+      .prepare("SELECT locked_until FROM auth_locks WHERE key = ? AND locked_until > ?")
+      .get(key, now) as { locked_until: number } | undefined;
+    if (active) {
+      return Number(active.locked_until);
+    }
     const since = now - LOCKOUT_POLICY.windowMs;
     // 古い記録はここで掃除する（失敗が無ければ表は増えないので、別の掃除役は要らない）。
     db.prepare("DELETE FROM auth_failures WHERE failed_at < ?").run(since);
