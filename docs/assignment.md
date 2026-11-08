@@ -96,14 +96,15 @@ solver with exact solutions computed by code that does not share anything with t
 | check | instances | result |
 |---|---|---|
 | Bitmask DP over occupied cells, solver run without limits | 200 random boards: 2–3 columns, 4–6 slots, 1–5 groups, spans 1–3 | objective equal on all 200, no truncation |
-| Same 200 boards with the default limits | as above | objective equal on all 200, no truncation |
+| Same 200 boards with the default limits | as above | objective equal on all 200, no truncation (the top-24 cut never binds at this size) |
+| Same 200 boards with the cut forced to 2 candidates per group | as above | every group left unplaced has no free window left |
 | Hungarian method, all spans 1 | 50 random 5 x 6 weekly boards, 4–8 groups | objective equal on all 50 |
 | Feasibility of every returned solution | all of the above | no shared cells, correct spans, required members free, attendee lists recomputed |
 
 The solutions themselves are not compared, because optima are often not unique.
 The oracle tests fail if the "leave unplaced" branch is removed, if the pruning rule is made
-too aggressive, or if the overlap check only compares start slots (each was tried by
-temporarily changing the solver).
+too aggressive, if the overlap check only compares start slots, or if the last pass over cut
+candidates is removed (each was tried by temporarily changing the solver).
 
 ## Benchmark against an exact MIP
 
@@ -116,11 +117,11 @@ The full table, with the machine and commit it was produced on, is in
 - On weekly 5 x 6 grids with 6 or 10 groups, the default solver matched the MIP optimum in
   100% and 99% of instances.
 - With 14 groups on the same grid (tight: many two-slot groups competing for 30 cells), it
-  matched in 91% of instances, hit the node limit in 15%, and was at most 5 attendees
-  (6.8%) below the optimum.
+  matched in 91% of instances, hit the node limit in 17%, and was at most 2 attendees
+  (2.5%) below the optimum.
 - Every instance with a non-zero gap had hit the node limit; the top-24 candidate cut never
   caused a gap in these runs.
-- The greedy start alone matched the optimum in only 12–74% of the weekly instances, so the
+- The greedy start alone matched the optimum in only 22–76% of the weekly instances, so the
   search does real work there.
 
 ## Known limitations

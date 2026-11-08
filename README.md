@@ -77,7 +77,10 @@ says the result may not be optimal.
 candidates independently of the app code and solve exactly:
 
 - 200 random small boards (2–3 columns, 4–6 slots, 1–5 groups, spans 1–3) with a bitmask DP over
-  occupied cells: the objective matches on all 200, with and without the default limits;
+  occupied cells: the objective matches on all 200, both without limits and with the default node
+  budget (the default top-24 candidate cut never binds on boards this small);
+- the same 200 boards with the cut forced to 2 candidates per group: every group left unplaced
+  has no free window left, i.e. the last pass over cut candidates works;
 - 50 random 5 x 6 weekly boards with single-slot groups, with the Hungarian method: the objective
   matches on all 50;
 - every returned timetable is checked for shared cells, spans, required members and attendee lists.
@@ -87,12 +90,16 @@ Apple M5 laptop, not on Workers):
 
 | instances | n | matched MIP optimum | max gap | node budget hit | B&B ms p50 / p95 | HiGHS ms p50 |
 |---|---:|---:|---:|---:|---:|---:|
-| weekly 5x6, 6 groups | 100 | 100% | 0 | 0% | 0.3 / 0.9 | 3.6 |
-| weekly 5x6, 10 groups | 100 | 99% | 2 (2.9%) | 1% | 0.6 / 6.6 | 5.1 |
-| weekly 5x6, 14 groups | 100 | 91% | 5 (6.8%) | 15% | 2.6 / 30.7 | 6.3 |
-| range 61x10, 16 groups | 30 | 100% | 0 | 0% | 23.8 / 39.1 | 169.6 |
+| weekly 5x6, 6 groups | 100 | 100% | 0 | 0% | 0.2 / 0.5 | 2.2 |
+| weekly 5x6, 10 groups | 100 | 99% | 1 (1.5%) | 3% | 0.3 / 5.0 | 2.5 |
+| weekly 5x6, 14 groups | 100 | 91% | 2 (2.5%) | 17% | 0.9 / 13.9 | 3.0 |
+| range 20x10, 12 groups | 30 | 100% | 0 | 0% | 2.7 / 3.2 | 16.0 |
+| range 40x10, 12 groups | 30 | 100% | 0 | 0% | 5.5 / 6.5 | 36.6 |
+| range 61x10, 16 groups | 30 | 100% | 0 | 0% | 11.0 / 12.7 | 82.9 |
 
-Every instance with a gap had hit the node budget. The weak bound (it ignores conflicts) is the
+The solver runs with its default limits (node budget 200,000, top 24 candidates per group), so it
+is an anytime search, not an exact method; HiGHS times include parsing the LP text. Every
+instance with a gap had hit the node budget. The weak bound (it ignores conflicts) is the
 main limitation on tight grids; see [Limitations](#limitations).
 
 ## Designed for daily use
@@ -123,10 +130,12 @@ main limitation on tight grids; see [Limitations](#limitations).
 - **Access control.** One shared Basic-auth password guards every page and API (except a health
   check). The Worker fails closed if no password is set, rejects cross-site writes
   (`Content-Type` and `Sec-Fetch-Site` checks, because browsers attach remembered Basic
-  credentials to cross-site form posts), and locks out a client address after 10 failed sign-ins
-  in 10 minutes for 15 minutes — even for the correct password. Optional per-participant
-  passwords (scrypt) have the same lockout. Only failures are counted, so polling clients behind
-  a shared NAT are unaffected.
+  credentials to cross-site form posts), and locks out a client address for 15 minutes after 10
+  failed sign-ins within 10 minutes. While locked, every attempt gets 429, right password or
+  not, so the response does not reveal a correct guess. Only failures are counted, so successful
+  polling never uses up the allowance; but because the key is the client address, failures from
+  one person behind a shared NAT lock out everyone behind it. Optional per-participant passwords
+  (scrypt) are locked out per participant in the same way.
 - **Privacy on the presence board.** Attendance "titles" (longest streak, most days this month)
   show only the top person and only above a threshold; day counts and rankings are never listed.
 
@@ -152,7 +161,7 @@ flowchart LR
 
 ## Run locally
 
-Requires Node.js 22.13+ and pnpm.
+Requires Node.js 22.13+ (CI runs Node 24) and pnpm.
 
 ```bash
 pnpm install
@@ -216,8 +225,8 @@ TypeScript, React 19, React Router, Zustand, Tailwind CSS 4, Vite, Zod, Cloudfla
 Durable Objects (SQLite), Biome, Vitest with `@cloudflare/vitest-plugin`. HiGHS (`highs` on npm)
 is a dev dependency used only by the benchmark.
 
-127 tests: 102 unit tests on Node (solver, oracles, schedule grid, messages, password hashing,
-demo data) and 25 Worker/Durable Object tests on workerd (authentication and lockout, routing,
+130 tests: 104 unit tests on Node (solver, oracles, schedule grid, messages, password hashing,
+demo data) and 26 Worker/Durable Object tests on workerd (authentication and lockout, routing,
 events, presence notifications). CI runs typecheck, lint, tests and build on every push to
 `main` and on pull requests.
 
@@ -226,16 +235,19 @@ events, presence notifications). CI runs typecheck, lint, tests and build on eve
 - The objective is total attendance. It can prefer one large, partly attended group over two
   small, fully attended ones; a lexicographic objective would fit how people judge timetables.
 - The bound ignores conflicts, so tight instances (14 groups on 30 cells) hit the node budget in
-  15% of the benchmark runs. A matching-based bound would prune much more.
+  17% of the benchmark runs. A matching-based bound would prune much more.
+- Lockouts trade availability for resistance to guessing: anyone who knows the shared password
+  can lock a participant out for 15 minutes by entering wrong participant passwords, and one
+  client can lock out a whole shared NAT.
 - One shared password identifies nobody. For per-person access, put an identity-aware proxy such
   as Cloudflare Access in front.
 - The UI is Japanese only.
 
 ## Background
 
-I first built this for the research lab I belong to and have been running it there. This
-repository is a rewrite of that tool for general use: lab-specific parts were removed, the names,
-roles and timetable became settings, and the lockout, oracle tests and benchmark were added.
+I originally built this tool for a university research group. This repository is a rewrite of
+it for general use: parts specific to that group were removed, the names, roles and timetable
+became settings, and the lockout, oracle tests and benchmark were added.
 
 ## License
 
