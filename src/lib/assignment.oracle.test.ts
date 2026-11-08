@@ -326,3 +326,82 @@ describe("厳密解との突き合わせ", () => {
     ).toBe(4);
   });
 });
+
+describe("候補の絞り込み（上位 maxPlacements 件）", () => {
+  it("絞り込みで漏れた枠も、置けなかったグループの最後の当たり直しで使う", () => {
+    // A の上位 1 件（1 コマ目）は B に取られる。漏れた 2 コマ目に当たり直せば両方置ける。
+    const instance: Instance = {
+      columns: ["mon"],
+      slots: [1, 2],
+      groups: [
+        {
+          name: "A",
+          span: 1,
+          members: [
+            { name: "a1", busy: new Set() },
+            { name: "a2", busy: new Set(["mon:2"]) },
+          ],
+          required: [],
+        },
+        {
+          name: "B",
+          span: 1,
+          members: ["b1", "b2", "b3"].map((name) => ({ name, busy: new Set(["mon:2"]) })),
+          required: [],
+        },
+      ],
+    };
+    const result = solve(instance, { nodeBudget: Number.POSITIVE_INFINITY, maxPlacements: 1 });
+    expect(result.unplaced).toEqual([]);
+    expect(result.totalAttendance).toBe(solveByDp(enumerateOptions(instance)));
+    expectFeasible(instance, result);
+  });
+
+  it("候補を 2 件に絞っても、置けなかったグループには空いている枠が 1 つも残らない", () => {
+    let narrowed = 0;
+    for (let seed = 0; seed < 200; seed += 1) {
+      const instance = randomInstance(seed, {
+        columns: 2 + (seed % 2),
+        slots: 4 + (seed % 3),
+        groups: 1 + (seed % 5),
+        maxSpan: 3,
+        people: 6,
+      });
+      const options = enumerateOptions(instance);
+      if (options.some((group) => group.length > 2)) narrowed += 1;
+      const result = solve(instance, { nodeBudget: Number.POSITIVE_INFINITY, maxPlacements: 2 });
+      expectFeasible(instance, result);
+      expect(result.totalAttendance).toBeLessThanOrEqual(solveByDp(options));
+      for (const { groupId } of result.unplaced) {
+        const group = instance.groups[groupId - 1];
+        if (!group) throw new Error("知らないグループ");
+        for (const column of instance.columns) {
+          for (const start of instance.slots) {
+            const end = start + group.span - 1;
+            if (end > Math.max(...instance.slots)) continue;
+            const cells = Array.from({ length: group.span }, (_, k) => `${column}:${start + k}`);
+            const freeNames = new Set(
+              group.members
+                .filter((member) => cells.every((cell) => !member.busy.has(cell)))
+                .map((member) => member.name),
+            );
+            if (freeNames.size === 0 || !group.required.every((name) => freeNames.has(name))) {
+              continue;
+            }
+            const blocked = result.placements.some(
+              (placement) =>
+                placement.columnKey === column &&
+                placement.startSlot <= end &&
+                start <= placement.endSlot,
+            );
+            expect(blocked, `seed ${seed}: ${group.name} を ${column}:${start} に置ける`).toBe(
+              true,
+            );
+          }
+        }
+      }
+    }
+    // 絞り込みが実際に効いた盤面が十分にあること（効かなければ検査の意味がない）。
+    expect(narrowed).toBeGreaterThan(100);
+  });
+});
