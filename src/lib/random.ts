@@ -9,3 +9,13 @@ export function createRandom(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
   };
 }
+
+/** 偏りのないシャッフル（Fisher–Yates）。元の配列は変えない。 */
+export function shuffle<T>(items: readonly T[], random: () => number): T[] {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const other = Math.floor(random() * (index + 1));
+    [copy[index], copy[other]] = [copy[other] as T, copy[index] as T];
+  }
+  return copy;
+}

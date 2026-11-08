@@ -1,5 +1,5 @@
 import type { SeminarInput } from "../src/lib/assignment";
-import { createRandom } from "../src/lib/random";
+import { createRandom, shuffle } from "../src/lib/random";
 
 /**
  * bench 用の問題。seed から決まる架空の予定表で、実データは使わない。
@@ -47,7 +47,7 @@ export function buildInstance(shape: Shape, seed: number): Instance {
   const members = people.slice(1);
   const seminars = Array.from({ length: shape.groups }, (_, index): SeminarInput => {
     const size = 3 + Math.floor(random() * 8);
-    const chosen = [...members].sort(() => random() - 0.5).slice(0, size);
+    const chosen = shuffle(members, random).slice(0, size);
     const requiresOwner = random() < 0.5;
     return {
       groupId: index + 1,

@@ -1,4 +1,4 @@
-import { createRandom } from "@/lib/random";
+import { createRandom, shuffle } from "@/lib/random";
 
 /**
  * 見本のイベントの中身。人物も予定も、固定の seed から作る架空のデータ。
@@ -62,15 +62,6 @@ const GIVEN_NAMES = [
   "いろは",
   "だいち",
 ];
-
-function shuffle<T>(items: readonly T[], random: () => number): T[] {
-  const copy = [...items];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const other = Math.floor(random() * (index + 1));
-    [copy[index], copy[other]] = [copy[other] as T, copy[index] as T];
-  }
-  return copy;
-}
 
 /**
  * 盤面を作る。列とコマは呼ぶ側の設定から渡す（既定は 月〜金 × 6 コマ）。
