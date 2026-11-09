@@ -1,6 +1,6 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { LOCKOUT_POLICY, lockedUntil, recordFailure } from "@/server/auth-guard";
+import { clientAddressKey, LOCKOUT_POLICY, lockedUntil, recordFailure } from "@/server/auth-guard";
 import { readConfig } from "@/server/config";
 import { createDb } from "@/server/db";
 import { runWithRuntime } from "@/server/runtime";
@@ -47,5 +47,18 @@ describe("ロックアウトの時間経過", () => {
       expect(lockedUntil(key, until)).toBeNull();
       expect(recordFailure(key, until)).toBeNull();
     });
+  });
+});
+
+describe("送り元のキー", () => {
+  it("IPv6 は /64 にまとめ、IPv4 はアドレスごとに分ける", () => {
+    const key = clientAddressKey("2001:db8:1:2::1");
+    expect(key).toBe("ip:2001:db8:1:2::/64");
+    expect(clientAddressKey("2001:0DB8:0001:0002:ffff:0:0:9")).toBe(key);
+    expect(clientAddressKey("2001:db8:1:3::1")).not.toBe(key);
+    expect(clientAddressKey("2001:db8::1")).toBe("ip:2001:db8:0:0::/64");
+    expect(clientAddressKey("203.0.113.1")).toBe("ip:203.0.113.1");
+    expect(clientAddressKey("::ffff:203.0.113.1")).toBe("ip:203.0.113.1");
+    expect(clientAddressKey(null)).toBe("ip:local");
   });
 });

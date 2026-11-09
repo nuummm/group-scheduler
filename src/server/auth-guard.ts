@@ -16,6 +16,31 @@ import { memo } from "./runtime";
 /** Worker が DO へ渡す、入口の照合に使ったキー。外から来た同名のヘッダーは Worker が捨てる。 */
 export const GUARD_KEY_HEADER = "x-guard-key";
 
+/**
+ * 入口のロックアウトで送り元を表すキー。IPv6 は上位 64 ビットにまとめる。
+ * 1 回線に /64 が丸ごと配られるのが普通なので、アドレス単位で数えると
+ * アドレスを替えるだけで何回でも試せてしまう。
+ */
+export function clientAddressKey(address: string | null): string {
+  if (!address) {
+    return "ip:local";
+  }
+  // IPv4 と、IPv6 に埋め込まれた IPv4（::ffff:192.0.2.1）は IPv4 のまま数える。
+  const v4 = /(\d{1,3}(?:\.\d{1,3}){3})$/.exec(address);
+  if (v4 || !address.includes(":")) {
+    return `ip:${v4 ? v4[1] : address}`;
+  }
+  const [head = "", tail] = address.toLowerCase().split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups =
+    tail === undefined
+      ? left
+      : [...left, ...new Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  const prefix = groups.slice(0, 4).map((group) => Number.parseInt(group, 16).toString(16));
+  return `ip:${prefix.join(":")}::/64`;
+}
+
 export const LOCKOUT_POLICY = {
   maxFailures: 10,
   windowMs: 10 * 60_000,

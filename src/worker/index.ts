@@ -1,4 +1,4 @@
-import { GUARD_KEY_HEADER, retryAfterSeconds } from "../server/auth-guard";
+import { clientAddressKey, GUARD_KEY_HEADER, retryAfterSeconds } from "../server/auth-guard";
 import { jsonError, unauthorized, verifyBasicAuth } from "./auth";
 
 export { AppStore } from "../server/store";
@@ -96,7 +96,7 @@ export default {
       return withSecurityHeaders(unauthorized());
     }
     // 送り元のアドレスは Cloudflare が付ける。手元の開発では付かないので 1 つにまとまる。
-    const guardKey = `ip:${request.headers.get("cf-connecting-ip") ?? "local"}`;
+    const guardKey = clientAddressKey(request.headers.get("cf-connecting-ip"));
     if (result === "invalid") {
       const until = await store.recordAuthFailure(guardKey);
       return withSecurityHeaders(until === null ? unauthorized() : locked(until));

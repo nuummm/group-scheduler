@@ -341,6 +341,17 @@ describe("認証失敗のロックアウト", () => {
     expect((await call("/api/healthz", from(ip, ""))).status).toBe(200);
   });
 
+  it("IPv6 では同じ /64 の中でアドレスを替えても数え直さない", async () => {
+    for (let attempt = 1; attempt <= max; attempt += 1) {
+      await call(
+        "/api/attendance",
+        from(`2001:db8:10:20::${attempt}`, basicAuth(BASIC_USER, "nope")),
+      );
+    }
+    expect((await call("/api/attendance", from("2001:db8:10:20::ffff"))).status).toBe(429);
+    expect((await call("/api/attendance", from("2001:db8:10:21::1"))).status).toBe(200);
+  });
+
   it("合言葉を付けていない要求と、成功した要求は数えない", async () => {
     const ip = "203.0.113.20";
     for (let attempt = 0; attempt < max * 2; attempt += 1) {
