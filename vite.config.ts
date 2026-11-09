@@ -9,6 +9,6 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "src") },
   },
-  server: { host: "127.0.0.1", port: 8000 },
-  preview: { host: "127.0.0.1", port: 8000 },
+  server: { host: "127.0.0.1", port: 8000, strictPort: true },
+  preview: { host: "127.0.0.1", port: 8000, strictPort: true },
 });
