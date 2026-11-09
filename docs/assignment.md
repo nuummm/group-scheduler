@@ -1,7 +1,8 @@
 # Group session assignment: formulation and solver
 
 This note describes the problem solved by [`src/lib/assignment.ts`](../src/lib/assignment.ts),
-the branch-and-bound search used to solve it, and how the search is checked.
+the branch-and-bound search used to solve it, and how the search is checked. In the code a group
+is called a *seminar* (`assignSeminars`, `SeminarInput`), the name it had in the first version.
 
 ## Problem
 
@@ -68,9 +69,10 @@ LP/MIP solver (WebAssembly) in the request path.
 
 Depth-first branch and bound, no external solver:
 
-1. **Candidates.** For each group, enumerate windows, drop infeasible ones, and sort by weight
-   (descending), then by column and slot (earliest first). Keep the top 24 per group
-   (`MAX_PLACEMENTS_PER_SEMINAR`).
+1. **Candidates.** For each group, enumerate windows, drop infeasible ones and those that
+   overlap a hand-placed group, and sort by weight (descending), then by column and slot
+   (earliest first). Keep the top 24 per group (`MAX_PLACEMENTS_PER_SEMINAR`). Blocked windows
+   are dropped before the cut, so they never take a place in the top 24.
 2. **Order.** Groups with the fewest candidates are branched on first (a fail-first rule);
    ties go to the larger group.
 3. **Initial incumbent.** A greedy pass places each group in its best non-conflicting window.
@@ -99,9 +101,13 @@ solver with exact solutions computed by code that does not share anything with t
 | Same 200 boards with the default limits | as above | objective equal on all 200, no truncation (the top-24 cut never binds at this size) |
 | Same 200 boards with the cut forced to 2 candidates per group | as above | every group left unplaced has no free window left |
 | Hungarian method, all spans 1 | 50 random 5 x 6 weekly boards, 4–8 groups | objective equal on all 50 |
+| Same 50 boards with the default limits (the top-24 cut binds on 30 cells) | as above | never above the optimum; any shortfall is flagged as truncated |
+| Bitmask DP started from the cells of one hand-placed group | 200 random boards: 2–3 columns, 4–6 slots, 2–5 groups, spans 1–3 | objective equal on all 200, without limits and with the defaults |
 | Feasibility of every returned solution | all of the above | no shared cells, correct spans, required members free, attendee lists recomputed |
 
 The solutions themselves are not compared, because optima are often not unique.
+A hand-made case also checks that windows blocked by a hand-placed group are removed before the
+top-24 cut rather than after it.
 The oracle tests fail if the "leave unplaced" branch is removed, if the pruning rule is made
 too aggressive, if the overlap check only compares start slots, or if the last pass over cut
 candidates is removed (each was tried by temporarily changing the solver).
