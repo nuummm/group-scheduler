@@ -10,7 +10,7 @@ import { createRandom } from "./random";
  *
  * 比べるのは目的関数の値（出られる人の延べ人数）。最適解は 1 つとは限らないので、
  * 置き場所そのものは比べず、解が満たすべき条件（不変条件）を別に確かめる。
- * 人が置いた枠（仮決め）は探索の外にあるので、ここでは扱わない（assignment.test.ts）。
+ * 人が置いた枠は、DP の初期状態でそのマスを埋めておくことで同じ問題として解く。
  */
 
 interface Instance {
@@ -29,14 +29,19 @@ interface Option {
   value: number;
 }
 
-/** グループごとの置き方（使うマスの集合と、出られる人数）を素直に数える。 */
-function enumerateOptions(instance: Instance): Option[][] {
+function indexCells(instance: Instance): Map<string, number> {
   const cellIndex = new Map<string, number>();
   for (const column of instance.columns) {
     for (const slot of instance.slots) {
       cellIndex.set(`${column}:${slot}`, cellIndex.size);
     }
   }
+  return cellIndex;
+}
+
+/** グループごとの置き方（使うマスの集合と、出られる人数）を素直に数える。 */
+function enumerateOptions(instance: Instance): Option[][] {
+  const cellIndex = indexCells(instance);
   return instance.groups.map((group) => {
     const options: Option[] = [];
     for (const column of instance.columns) {
@@ -67,7 +72,7 @@ function enumerateOptions(instance: Instance): Option[][] {
 }
 
 /** 使ったマスの集合を状態にした動的計画法。グループは置かなくてもよい。 */
-function solveByDp(options: Option[][]): number {
+function solveByDp(options: Option[][], initiallyUsed = 0n): number {
   const memo = new Map<string, number>();
   const best = (index: number, used: bigint): number => {
     if (index === options.length) {
@@ -87,7 +92,7 @@ function solveByDp(options: Option[][]): number {
     memo.set(key, value);
     return value;
   };
-  return best(0, 0n);
+  return best(0, initiallyUsed);
 }
 
 /**
@@ -179,7 +184,10 @@ function randomInstance(
   return { columns, slots, groups };
 }
 
-function toInputs(instance: Instance): SeminarInput[] {
+/** 人が置いた枠。グループの番号（0 始まり）から開始コマへ。 */
+type Placed = Map<number, { columnKey: string; startSlot: number }>;
+
+function toInputs(instance: Instance, placed: Placed = new Map()): SeminarInput[] {
   return instance.groups.map((group, index) => ({
     groupId: index + 1,
     groupName: group.name,
@@ -187,6 +195,7 @@ function toInputs(instance: Instance): SeminarInput[] {
     slotSpan: group.span,
     members: group.members,
     requiredNames: group.required,
+    placedStart: placed.get(index) ?? null,
   }));
 }
 
@@ -195,9 +204,9 @@ const UNLIMITED = {
   maxPlacements: Number.POSITIVE_INFINITY,
 };
 
-function solve(instance: Instance, options: AssignmentOptions = UNLIMITED) {
+function solve(instance: Instance, options: AssignmentOptions = UNLIMITED, placed?: Placed) {
   return assignSeminars(
-    toInputs(instance),
+    toInputs(instance, placed),
     instance.columns.map((key) => ({ key, label: key })),
     instance.slots,
     options,
@@ -205,7 +214,11 @@ function solve(instance: Instance, options: AssignmentOptions = UNLIMITED) {
 }
 
 /** 解が満たすべき条件。目的関数の一致とは別に、解そのものが実行できる案かを見る。 */
-function expectFeasible(instance: Instance, result: ReturnType<typeof solve>): void {
+function expectFeasible(
+  instance: Instance,
+  result: ReturnType<typeof solve>,
+  placed: Placed = new Map(),
+): void {
   const placements = result.placements;
   for (const [index, a] of placements.entries()) {
     for (const b of placements.slice(index + 1)) {
@@ -221,6 +234,13 @@ function expectFeasible(instance: Instance, result: ReturnType<typeof solve>): v
       .filter((member) => cells.every((cell) => !member.busy.has(cell)))
       .map((member) => member.name);
     expect([...a.freeNames].sort()).toEqual([...free].sort());
+    const start = placed.get(a.groupId - 1);
+    if (start) {
+      // 人が置いた枠は必須メンバーの都合でも動かさない。
+      expect({ columnKey: a.columnKey, startSlot: a.startSlot }).toEqual(start);
+      expect(a.moved).toBe(true);
+      continue;
+    }
     for (const name of group.required) {
       expect(a.freeNames).toContain(name);
     }
@@ -286,10 +306,59 @@ describe("厳密解との突き合わせ", () => {
           return group.required.every((name) => freeNames.has(name)) ? free.length : 0;
         }),
       );
+      const optimum = solveByHungarian(weights);
       const result = solve(instance);
       expect(result.truncated).toBe(false);
-      expect(result.totalAttendance, `seed ${1000 + seed}`).toBe(solveByHungarian(weights));
+      expect(result.totalAttendance, `seed ${1000 + seed}`).toBe(optimum);
       expectFeasible(instance, result);
+
+      // 既定の上限（候補 24 件）は 30 マスの盤面で実際に効く。最適値に届かないのは
+      // 打ち切ったときだけで、絞り込みのせいで届かないことはない。
+      const limited = solve(instance, {});
+      expect(limited.totalAttendance).toBeLessThanOrEqual(optimum);
+      if (limited.totalAttendance < optimum) {
+        expect(limited.truncated, `seed ${1000 + seed}`).toBe(true);
+      }
+      expectFeasible(instance, limited);
+    }
+  });
+
+  it("人が置いた枠がある盤面 200 件で、DP の最適値と一致する（上限なし・既定の上限とも）", () => {
+    for (let seed = 0; seed < 200; seed += 1) {
+      const instance = randomInstance(5000 + seed, {
+        columns: 2 + (seed % 2),
+        slots: 4 + (seed % 3),
+        groups: 2 + (seed % 4),
+        maxSpan: 3,
+        people: 6,
+      });
+      // 1 グループを、空き具合に関係なく決まった場所へ置く（人の指定は空き人数で捨てない）。
+      const random = createRandom(seed);
+      const index = Math.floor(random() * instance.groups.length);
+      const group = instance.groups[index];
+      if (!group) throw new Error("グループが無い");
+      const columnKey = instance.columns[Math.floor(random() * instance.columns.length)] as string;
+      const startSlot = 1 + Math.floor(random() * (instance.slots.length - group.span + 1));
+      const placed: Placed = new Map([[index, { columnKey, startSlot }]]);
+
+      const cellIndex = indexCells(instance);
+      const cells = Array.from({ length: group.span }, (_, k) => `${columnKey}:${startSlot + k}`);
+      const mask = cells.reduce(
+        (bits, cell) => bits | (1n << BigInt(cellIndex.get(cell) ?? 0)),
+        0n,
+      );
+      const placedValue = group.members.filter((member) =>
+        cells.every((cell) => !member.busy.has(cell)),
+      ).length;
+      const options = enumerateOptions(instance).map((list, i) => (i === index ? [] : list));
+      const optimum = placedValue + solveByDp(options, mask);
+
+      for (const limits of [UNLIMITED, {}]) {
+        const result = solve(instance, limits, placed);
+        expect(result.truncated, `seed ${5000 + seed}`).toBe(false);
+        expect(result.totalAttendance, `seed ${5000 + seed}`).toBe(optimum);
+        expectFeasible(instance, result, placed);
+      }
     }
   });
 
@@ -355,6 +424,39 @@ describe("候補の絞り込み（上位 maxPlacements 件）", () => {
     expect(result.unplaced).toEqual([]);
     expect(result.totalAttendance).toBe(solveByDp(enumerateOptions(instance)));
     expectFeasible(instance, result);
+  });
+
+  it("人が置いた枠とぶつかる窓は、上位を選ぶ前に除く", () => {
+    // A を mon:1 に置く。B と C の上位 2 件にはどちらも mon:1 が入るので、先に絞ると
+    // 実際に使える候補が 1 件ずつに減り、2 グループが mon:2 を取り合って C が置けない。
+    const instance: Instance = {
+      columns: ["mon"],
+      slots: [1, 2, 3],
+      groups: [
+        { name: "A", span: 1, members: [{ name: "a1", busy: new Set() }], required: [] },
+        {
+          name: "B",
+          span: 1,
+          members: ["b1", "b2", "b3"].map((name) => ({ name, busy: new Set<string>() })),
+          required: [],
+        },
+        {
+          name: "C",
+          span: 1,
+          members: ["c1", "c2"].map((name) => ({ name, busy: new Set(["mon:3"]) })),
+          required: [],
+        },
+      ],
+    };
+    const placed: Placed = new Map([[0, { columnKey: "mon", startSlot: 1 }]]);
+    const result = solve(
+      instance,
+      { nodeBudget: Number.POSITIVE_INFINITY, maxPlacements: 2 },
+      placed,
+    );
+    expect(result.unplaced).toEqual([]);
+    expect(result.totalAttendance).toBe(6);
+    expectFeasible(instance, result, placed);
   });
 
   it("候補を 2 件に絞っても、置けなかったグループには空いている枠が 1 つも残らない", () => {

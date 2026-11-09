@@ -190,20 +190,32 @@ export function assignSeminars(
   const maxPlacements = options.maxPlacements ?? MAX_PLACEMENTS_PER_SEMINAR;
   const unplaced: AssignmentResult["unplaced"] = [];
 
+  // 人が置いた場所があるなら選択肢はその 1 つだけ。人の指定は案より強いので、
+  // 空き人数でも必須メンバーの都合でも捨てない（候補の一覧からは引かず、直接組む）。
+  const placedSlots = seminars.map((seminar) =>
+    seminar.placedStart ? buildSlot(seminar, columns, slotNumbers, seminar.placedStart) : null,
+  );
+
+  // 人が押さえたコマは、案に出さないグループのぶんも空けておく。案から外れても
+  // 全体表には 📌 が描かれたままなので、そこへ別のグループを入れると
+  // 画面上は同じコマに 2 つ並ぶ。
+  const occupiedSlots = placedSlots.filter((slot): slot is Slot => slot !== null);
+
   // グループごとに置ける枠を用意する。誰も出られない枠は最初から捨てる。
-  const all = seminars.map((seminar) => {
+  const all = seminars.map((seminar, index) => {
     const required = new Set(seminar.requiredNames ?? []);
-    // 人が置いた場所があるなら選択肢はその 1 つだけ。人の指定は案より強いので、
-    // 空き人数でも必須メンバーの都合でも捨てない（候補の一覧からは引かず、直接組む）。
-    const placedSlot = seminar.placedStart
-      ? buildSlot(seminar, columns, slotNumbers, seminar.placedStart)
-      : null;
+    const placedSlot = placedSlots[index] ?? null;
     // 必須の人が出られない枠は、何人集まっても開催できないので候補にしない。
-    const usable = placedSlot
+    const open = placedSlot
       ? [placedSlot]
       : findCandidates(seminar.members, columns, slotNumbers, seminar.slotSpan).filter(
           (slot) => slot.freeCount > 0 && !slot.busyNames.some((name) => required.has(name)),
         );
+    // 人が置いた枠と重なる窓は探索に入れても必ず捨てるので、上位を選ぶ前に除く。
+    // 後で除くと、ふさがった窓が上位の席を取り、探索に残る候補が上限より少なくなる。
+    const usable = placedSlot
+      ? open
+      : open.filter((slot) => !occupiedSlots.some((other) => overlaps(slot, other)));
     const slots: Slot[] = usable.slice(0, maxPlacements);
     return {
       seminar,
@@ -212,6 +224,8 @@ export function assignSeminars(
       // ここを見ずに「置けません」と言うと、掴めば置けるマスが光っているのに
       // 赤字で「枠がありません」と出る、という食い違いになる。
       spilled: usable.slice(maxPlacements),
+      // 空いている枠はあるが、すべて人が置いた枠とぶつかっている。
+      blockedByPlaced: open.length > 0 && usable.length === 0,
       isFixed: Boolean(placedSlot),
       hasRequired: required.size > 0,
       // 置き場所があるのに枠が組めない＝コマ割りが変わって指し先が消えている。
@@ -242,11 +256,6 @@ export function assignSeminars(
     return false;
   });
 
-  // 人が押さえたコマは、案に出さないグループのぶんも空けておく。案から外れても
-  // 全体表には 📌 が描かれたままなので、そこへ別のグループを入れると
-  // 画面上は同じコマに 2 つ並ぶ。
-  const occupiedSlots = all.filter((entry) => entry.isFixed).map((entry) => entry.slots[0] as Slot);
-
   // 確定済みは動かさない。探索の対象から外し、他のグループが避ける固定の障害物として扱う。
   const fixedEntries = staffed.filter((entry) => entry.isFixed);
   const entries = staffed
@@ -266,9 +275,11 @@ export function assignSeminars(
           groupName: entry.seminar.groupName,
           reason: entry.tooLong
             ? "必要な連続コマ数が、1 日ぶんのコマ数を超えています"
-            : entry.hasRequired
-              ? "必ず参加する人が出られる枠がありません"
-              : "全員に予定が入っていて置ける枠がありません",
+            : entry.blockedByPlaced
+              ? "他と重ならない枠が見つかりませんでした"
+              : entry.hasRequired
+                ? "必ず参加する人が出られる枠がありません"
+                : "全員に予定が入っていて置ける枠がありません",
         });
         return false;
       }
